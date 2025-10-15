@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import os # Import os for path handling
 
 # --- Configuration ---
 st.set_page_config(
@@ -9,34 +10,50 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- Define the data file path ---
+# Assuming the data file is in the same directory as the app.py file
+DATA_FILE = "22070521076_CA1_EDA.csv"
+
 # --- Data Loading and Preparation (Cached for performance) ---
-@st.cache_data
-def load_data():
+# Use suppress_st_warning=True to prevent warnings about mutating cached data
+@st.cache_data(suppress_st_warning=True)
+def load_data(file_path):
     """Loads the data and performs initial cleaning and calculation."""
+    st.info(f"Attempting to load data from: {file_path}")
     try:
-        df = pd.read_csv('22070521076_CA1_EDA.csv')
+        # Check if file exists (crucial for deployment environments)
+        if not os.path.exists(file_path):
+             st.error(f"File not found at: {file_path}. Please ensure it is uploaded.")
+             return pd.DataFrame()
+
+        df = pd.read_csv(file_path)
 
         # 1. Calculate Total Freight and Create Route Column
         df['TOTAL FREIGHT'] = df['FREIGHT TO CITY 2'] + df['FREIGHT FROM CITY 2']
         df['Route'] = df['CITY 1'] + ' - ' + df['CITY 2']
 
-        # 2. Convert to integer type for cleaner display
+        # 2. Robust Data Type Conversion: Potential source of TypeError
         int_cols = ['PASSENGERS TO CITY 2', 'PASSENGERS FROM CITY 2', 'TOTAL PASSENGERS']
-        # Using 'Int64' (Pandas' nullable integer type) to handle potential NaNs safely,
-        # though the original data seemed clean.
+        
+        for col in int_cols:
+             # Convert column to numeric, coercing errors to NaN
+             df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Now convert to the nullable integer type, Int64, after handling non-numeric values
         df[int_cols] = df[int_cols].astype('Int64')
-
+        
+        st.success("Data loaded and processed successfully!")
         return df
+
     except Exception as e:
-        st.error(f"Error loading or processing data: {e}")
+        st.error(f"A detailed error occurred during data loading/processing: {e}")
         return pd.DataFrame() # Return empty DataFrame on failure
 
 # --- Main App Execution ---
-DATA_FILE = "22070521076_CA1_EDA.csv"
 df = load_data(DATA_FILE)
 
 if not df.empty:
-
+    
     # --- Title and Summary Metrics ---
     st.title("✈️ Government Open Dataset: Air Traffic Analysis")
     st.markdown("Interactive visual reports for air traffic route decision-making.")
@@ -57,16 +74,17 @@ if not df.empty:
 
     # --- Dashboard Visualizations ---
 
-    # 1. Top 20 Busiest Routes by Total Passengers
-    st.header("1. Top 20 Busiest Air Routes by Total Passengers")
+    # 1. Top N Busiest Routes by Total Passengers
+    st.header("1. Top N Busiest Air Routes by Total Passengers")
     st.write("Identifies key routes for capacity planning and resource allocation.")
 
-    # Get the top 20 routes
-    top_n = st.slider("Select Top N Routes to Display:", 5, 50, 20)
-    top_routes_df = df.sort_values(by='TOTAL PASSENGERS', ascending=False).head(top_n)
+    # Get the top N routes
+    # Filter out potential NaN passenger routes before sorting
+    df_clean = df.dropna(subset=['TOTAL PASSENGERS'])
+    top_n = st.slider("Select Top N Routes to Display:", 5, min(50, len(df_clean)), 20)
+    top_routes_df = df_clean.sort_values(by='TOTAL PASSENGERS', ascending=False).head(top_n)
 
     chart1 = alt.Chart(top_routes_df).mark_bar().encode(
-        # Use 'N' for nominal to ensure all routes are treated as distinct categories
         x=alt.X('TOTAL PASSENGERS', title='Total Passengers', axis=alt.Axis(format='~s')),
         y=alt.Y('Route', sort='-x', title='Route'),
         tooltip=[
@@ -75,7 +93,7 @@ if not df.empty:
         color=alt.Color('TOTAL PASSENGERS', scale=alt.Scale(range='ramp'), legend=None)
     ).properties(
         height=500
-    ).interactive() # Allow zooming/panning
+    ).interactive() 
 
     st.altair_chart(chart1, use_container_width=True)
 
@@ -106,7 +124,7 @@ if not df.empty:
         )
     ).properties(
         height=400
-    ).interactive() # Allow zooming/panning
+    ).interactive() 
 
     st.altair_chart(chart2, use_container_width=True)
     
