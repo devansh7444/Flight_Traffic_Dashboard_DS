@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import os # Import os for path handling
+import os
 
 # --- Configuration ---
 st.set_page_config(
@@ -11,43 +11,36 @@ st.set_page_config(
 )
 
 # --- Define the data file path ---
-# Assuming the data file is in the same directory as the app.py file
 DATA_FILE = "22070521076_CA1_EDA.csv"
 
-# --- Data Loading and Preparation (Cached for performance) ---
-# Use suppress_st_warning=True to prevent warnings about mutating cached data
-@st.cache_data(suppress_st_warning=True)
+# --- Data Loading and Preparation (Cached) ---
+# Removed the problematic 'suppress_st_warning=True' argument
+@st.cache_data 
 def load_data(file_path):
     """Loads the data and performs initial cleaning and calculation."""
-    st.info(f"Attempting to load data from: {file_path}")
-    try:
-        # Check if file exists (crucial for deployment environments)
-        if not os.path.exists(file_path):
-             st.error(f"File not found at: {file_path}. Please ensure it is uploaded.")
-             return pd.DataFrame()
+    
+    if not os.path.exists(file_path):
+         # This error message is essential for debugging file access in deployment
+         st.error(f"FATAL ERROR: Data file not found at: {file_path}. Please ensure it is uploaded.")
+         return pd.DataFrame()
 
-        df = pd.read_csv(file_path)
+    df = pd.read_csv(file_path)
 
-        # 1. Calculate Total Freight and Create Route Column
-        df['TOTAL FREIGHT'] = df['FREIGHT TO CITY 2'] + df['FREIGHT FROM CITY 2']
-        df['Route'] = df['CITY 1'] + ' - ' + df['CITY 2']
+    # 1. Calculate Total Freight and Create Route Column
+    df['TOTAL FREIGHT'] = df['FREIGHT TO CITY 2'] + df['FREIGHT FROM CITY 2']
+    df['Route'] = df['CITY 1'] + ' - ' + df['CITY 2']
 
-        # 2. Robust Data Type Conversion: Potential source of TypeError
-        int_cols = ['PASSENGERS TO CITY 2', 'PASSENGERS FROM CITY 2', 'TOTAL PASSENGERS']
-        
-        for col in int_cols:
-             # Convert column to numeric, coercing errors to NaN
-             df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Now convert to the nullable integer type, Int64, after handling non-numeric values
-        df[int_cols] = df[int_cols].astype('Int64')
-        
-        st.success("Data loaded and processed successfully!")
-        return df
-
-    except Exception as e:
-        st.error(f"A detailed error occurred during data loading/processing: {e}")
-        return pd.DataFrame() # Return empty DataFrame on failure
+    # 2. Robust Data Type Conversion for Passenger Columns
+    int_cols = ['PASSENGERS TO CITY 2', 'PASSENGERS FROM CITY 2', 'TOTAL PASSENGERS']
+    
+    for col in int_cols:
+         # Convert to numeric, coercing any bad/non-numeric values to NaN
+         df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Convert to the nullable integer type ('Int64') for clean display
+    df[int_cols] = df[int_cols].astype('Int64')
+    
+    return df
 
 # --- Main App Execution ---
 df = load_data(DATA_FILE)
@@ -55,7 +48,7 @@ df = load_data(DATA_FILE)
 if not df.empty:
     
     # --- Title and Summary Metrics ---
-    st.title("✈️ Government Open Dataset: Air Traffic Analysis")
+    st.title("✈️ Government Open Dataset: Air Traffic Analysis Dashboard")
     st.markdown("Interactive visual reports for air traffic route decision-making.")
     st.markdown("---")
 
@@ -76,9 +69,8 @@ if not df.empty:
 
     # 1. Top N Busiest Routes by Total Passengers
     st.header("1. Top N Busiest Air Routes by Total Passengers")
-    st.write("Identifies key routes for capacity planning and resource allocation.")
+    st.write("Use the slider to focus on the busiest routes, aiding capacity planning.")
 
-    # Get the top N routes
     # Filter out potential NaN passenger routes before sorting
     df_clean = df.dropna(subset=['TOTAL PASSENGERS'])
     top_n = st.slider("Select Top N Routes to Display:", 5, min(50, len(df_clean)), 20)
@@ -93,18 +85,18 @@ if not df.empty:
         color=alt.Color('TOTAL PASSENGERS', scale=alt.Scale(range='ramp'), legend=None)
     ).properties(
         height=500
-    ).interactive() 
+    ).interactive() # Enables zoom and pan
 
     st.altair_chart(chart1, use_container_width=True)
 
     st.markdown("---")
 
-    # 2. Passenger Traffic vs. Freight Traffic per Route
+    # 2. Passenger Traffic vs. Freight Traffic per Route (Interactive for Decision-Making)
     st.header("2. Passenger Traffic vs. Freight Traffic per Route")
-    st.write("Analyzes the correlation between passenger and freight volume.")
+    st.write("Use the slider to highlight high-volume passenger routes for strategic comparison with freight.")
 
-    # Add a filter for high passenger routes
-    threshold = st.slider("Highlight Routes with Passengers Above (in thousands):",
+    # Slider allows users to interactively set the threshold for 'High Volume'
+    threshold = st.slider("Set Passenger Threshold for High Volume (in thousands):",
                           10, 500, 250, step=10) * 1000
 
     chart2 = alt.Chart(df).mark_circle(size=60).encode(
@@ -124,7 +116,7 @@ if not df.empty:
         )
     ).properties(
         height=400
-    ).interactive() 
+    ).interactive() # Enables zoom and pan
 
     st.altair_chart(chart2, use_container_width=True)
     
